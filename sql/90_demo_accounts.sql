@@ -4,26 +4,26 @@ GO
 SET NOCOUNT ON;
 SET XACT_ABORT ON;
 
-/* admin / 123456a */
+/* admin / 123456 — chỉ dùng cho môi trường demo cục bộ */
 IF EXISTS (SELECT 1 FROM dbo.Users WHERE Username = N'admin')
     UPDATE dbo.Users
-    SET PasswordHash = N'pbkdf2_sha256$310000$f3E6n_p80hxCGSQGGNfqMg$ZnDm763w1p5F3nP-BDINSeUyMaJjtjuCDqpTNyRs8fc',
+    SET PasswordHash = N'pbkdf2_sha256$310000$oY4OKD61zQLX1tpzoZgqTw$8vKX0x_TeX8AhO4zJbKeqosgQQ2yJ6s7eVRv_4SFrkg',
         RoleName = 'admin', IsActive = 1
     WHERE Username = N'admin';
 ELSE
     INSERT dbo.Users (Username, PasswordHash, RoleName, IsActive)
-    VALUES (N'admin', N'pbkdf2_sha256$310000$f3E6n_p80hxCGSQGGNfqMg$ZnDm763w1p5F3nP-BDINSeUyMaJjtjuCDqpTNyRs8fc', 'admin', 1);
+    VALUES (N'admin', N'pbkdf2_sha256$310000$oY4OKD61zQLX1tpzoZgqTw$8vKX0x_TeX8AhO4zJbKeqosgQQ2yJ6s7eVRv_4SFrkg', 'admin', 1);
 GO
 
-/* user_demo / 123456u */
+/* user_demo / 123456 — chỉ dùng cho môi trường demo cục bộ */
 IF EXISTS (SELECT 1 FROM dbo.Users WHERE Username = N'user_demo')
     UPDATE dbo.Users
-    SET PasswordHash = N'pbkdf2_sha256$310000$ZKx6qrHO6i2-c3CcuRETEw$W35Cjf5SKHjT5rCCxmFCT_hedvMDDy5Y5-QioQT6_8I',
+    SET PasswordHash = N'pbkdf2_sha256$310000$oY4OKD61zQLX1tpzoZgqTw$8vKX0x_TeX8AhO4zJbKeqosgQQ2yJ6s7eVRv_4SFrkg',
         RoleName = 'user', IsActive = 1
     WHERE Username = N'user_demo';
 ELSE
     INSERT dbo.Users (Username, PasswordHash, RoleName, IsActive)
-    VALUES (N'user_demo', N'pbkdf2_sha256$310000$ZKx6qrHO6i2-c3CcuRETEw$W35Cjf5SKHjT5rCCxmFCT_hedvMDDy5Y5-QioQT6_8I', 'user', 1);
+    VALUES (N'user_demo', N'pbkdf2_sha256$310000$oY4OKD61zQLX1tpzoZgqTw$8vKX0x_TeX8AhO4zJbKeqosgQQ2yJ6s7eVRv_4SFrkg', 'user', 1);
 GO
 
 DECLARE @UserId INT = (SELECT UserId FROM dbo.Users WHERE Username = N'user_demo');

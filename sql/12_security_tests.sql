@@ -18,7 +18,7 @@ BEGIN
     EXECUTE AS USER = N'phone_app';
     SELECT USER_NAME() AS CurrentUser,
            HAS_PERMS_BY_NAME(N'dbo.vw_ProductInventory','OBJECT','SELECT') AS CanReadProductView,
-           HAS_PERMS_BY_NAME(N'dbo.usp_CreateOrder','OBJECT','EXECUTE') AS CanCreateOrder,
+           HAS_PERMS_BY_NAME(N'dbo.usp_CreateOrder_Web','OBJECT','EXECUTE') AS CanCreateOrder,
            HAS_PERMS_BY_NAME(N'dbo.Products','OBJECT','DELETE') AS CanDeleteProducts;
     REVERT;
 END;
@@ -45,7 +45,7 @@ GO
 /* HAS_PERMS_BY_NAME phản ánh ngữ cảnh đang chạy truy vấn; tự nó không giả lập từng role. */
 /* Kiem tra quyen doc view bao cao va quyen thuc thi thu tuc dat hang. */
 SELECT HAS_PERMS_BY_NAME(N'dbo.vw_ProductInventory','OBJECT','SELECT') AS CanReadProductView,
-       HAS_PERMS_BY_NAME(N'dbo.usp_CreateOrder','OBJECT','EXECUTE') AS CanCreateOrder;
+       HAS_PERMS_BY_NAME(N'dbo.usp_CreateOrder_Web','OBJECT','EXECUTE') AS CanCreateOrder;
 GO
 
 /* Truy vấn dưới đây liệt kê DENY đã cấu hình; chưa trực tiếp thử đăng nhập và thao tác bằng từng principal. */

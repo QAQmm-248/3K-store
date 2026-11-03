@@ -64,7 +64,7 @@ GRANT SELECT ON dbo.vw_MonthlyRevenue TO role_store_admin;
 GRANT SELECT ON dbo.vw_AdminDashboard TO role_store_admin;
 GRANT EXECUTE ON dbo.usp_StockIn TO role_store_admin;
 GRANT EXECUTE ON dbo.usp_UpdateOrderStatus TO role_store_admin;
-GRANT EXECUTE ON dbo.usp_CreateOrder TO role_store_admin;
+    GRANT EXECUTE ON dbo.usp_CreateOrder_Web TO role_store_admin;
 GO
 
 /* Ung dung kiem tra quyen tai API; quyen SQL cua phone_app duoc gioi han. */
@@ -76,7 +76,7 @@ BEGIN
     GRANT SELECT ON dbo.vw_AdminDashboard TO phone_app;
     GRANT SELECT ON dbo.Categories TO phone_app;
     GRANT SELECT ON dbo.Brands TO phone_app;
-    GRANT EXECUTE ON dbo.usp_CreateOrder TO phone_app;
+    GRANT EXECUTE ON dbo.usp_CreateOrder_Web TO phone_app;
     DENY DELETE ON dbo.Products TO phone_app;
 END;
 GO

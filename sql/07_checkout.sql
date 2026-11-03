@@ -7,7 +7,7 @@ GO
 
 -- Cac bang Orders, OrderItems va Products cua bai tap la nguon du lieu chinh.
 -- Don dat tren web su dung lien ket CreatedBy va CustomerId hien co.
-CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder
+CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder_Web
     @UserId INT,
     @FullName NVARCHAR(150),
     @Phone VARCHAR(20),
@@ -66,13 +66,17 @@ BEGIN
         WHERE CustomerId = @CustomerId;
 
         DECLARE @Total DECIMAL(18,2) = (SELECT SUM(Quantity * UnitPrice) FROM @Cart);
+        /* Dùng hàm khuyến mãi của Module 8 cho đơn web.
+           OrderItems vẫn lưu giá bán gốc; Orders.TotalAmount lưu số phải thanh toán sau giảm. */
+        DECLARE @Discount DECIMAL(18,2) = dbo.VOUCHER(@CustomerId, @Total);
+        DECLARE @PayableTotal DECIMAL(18,2) = @Total - @Discount;
         DECLARE @OrderId INT;
 
         INSERT dbo.Orders
             (CustomerId, CreatedBy, Status, TotalAmount, CompletedAt,
              ShippingName, ShippingPhone, ShippingEmail, ShippingAddress)
         VALUES
-            (@CustomerId, @UserId, 'completed', @Total, SYSDATETIME(),
+            (@CustomerId, @UserId, 'completed', @PayableTotal, SYSDATETIME(),
              @FullName, @Phone, @Email, @Address);
         SET @OrderId = CONVERT(INT, SCOPE_IDENTITY());
 
@@ -83,7 +87,7 @@ BEGIN
         FROM dbo.Products p JOIN @Cart c ON c.ProductId = p.ProductId;
 
         COMMIT TRANSACTION;
-        SELECT @OrderId AS OrderId, @Total AS TotalAmount;
+        SELECT @OrderId AS OrderId, @PayableTotal AS TotalAmount, @Discount AS DiscountAmount;
     END TRY
     BEGIN CATCH
         IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
@@ -91,5 +95,5 @@ BEGIN
     END CATCH
 END;
 GO
-GRANT EXECUTE ON OBJECT::dbo.usp_CreateOrder TO phone_app;
+GRANT EXECUTE ON OBJECT::dbo.usp_CreateOrder_Web TO phone_app;
 GO

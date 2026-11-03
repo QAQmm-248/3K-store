@@ -1,27 +1,229 @@
-# 3K Store — quản lý cửa hàng thiết bị điện tử
+# 3K Store — hướng dẫn cài đặt và chạy toàn bộ hệ thống
 
-Website FastAPI phục vụ trang mua hàng và trang quản trị tại `localhost:8000`. SQL Server `PhoneStore` là nguồn dữ liệu đang chạy: sản phẩm, tài khoản, đơn hàng và tồn kho. Tên hiển thị là **3K Store**; giữ tên database `PhoneStore`, tài khoản SQL `phone_app` và các định danh container để không làm hỏng kết nối hiện có.
+3K Store là hệ thống quản lý cửa hàng thiết bị điện tử. Website dùng FastAPI/Uvicorn, giao diện HTML/CSS/JavaScript và SQL Server làm nguồn dữ liệu chính. Tên thương hiệu hiển thị là **3K Store**; các định danh kỹ thuật hiện có như database `PhoneStore`, login SQL `phone_app` và container Docker được giữ nguyên để không làm hỏng kết nối đã cấu hình.
 
-## Cấu trúc và chạy
+## 1. Thành phần cần có
 
-- `sql/01_database_init.sql`: script nền của bài tập, **xóa và tạo lại toàn bộ PhoneStore**. Không chạy trên database đang chứa đơn hàng hoặc tài khoản cần giữ.
-- `sql/02_schema_upgrade.sql`: bổ sung cột web vào schema nền; tạo 4 view, 2 function và 3 procedure. `sql/03_catalog_seed.sql` và `sql/04_catalog_expand.sql` nạp 500 SKU.
-- `sql/07_checkout.sql`: cài lại procedure đặt hàng và cấp quyền thực thi cho `phone_app`. `sql/05_hide_base_samples.sql` ngừng bán 40 sản phẩm mẫu nền sau khi nạp catalog, không xóa bản ghi.
-- `sql/09_report_queries.sql`: 11 truy vấn báo cáo; `sql/06_product_filters.sql`: lọc sản phẩm.
-- `data/products_master.csv`: danh mục chuẩn hóa; `data/du_lieu_nop_thiet_bi_dien_tu.csv`: bản nộp. Ảnh ở `data/anh_san_pham/`, web phục vụ qua `/product-images/`.
+- Windows 10/11.
+- Docker Desktop đang chạy.
+- SQL Server/SQL Server Express và SSMS. Máy hiện tại dùng `QAQMM\SQLEXPRESS`.
+- Quyền kết nối SQL Server bằng tài khoản quản trị khi cài schema và phân quyền.
+- Thư mục dự án: `C:\Users\DELL\Dropbox\PC\Downloads\HQT`.
 
-Trên máy đã cài Docker Desktop và cấu hình `admin.env`, mở PowerShell trong thư mục này, chạy `docker compose up -d --build web`. Mở `http://localhost:8000/`, `/admin`, `/health`. Thứ tự SQL cho database mới và lưu ý khi nâng cấp xem [sql/README.md](sql/README.md). Giữ `admin.env` ngoài Git.
+Không đưa mật khẩu thật vào GitHub. File `admin.env` chỉ dùng trên máy chạy dịch vụ và đã được loại khỏi nội dung cần chia sẻ.
 
-Để chạy chuỗi SQL theo thứ tự, mở `master_run.sql` trong SSMS và bật **Query > SQLCMD Mode**. Bước tạo lại database nằm trong file nhưng đang comment; chỉ bỏ comment khi dùng database thử nghiệm. Để kiểm thử an toàn trên database hiện tại, chạy `.\run_readonly_tests.ps1`; script chỉ parse toàn bộ SQL và chạy các truy vấn đọc.
+## 2. Cấu trúc chính
 
-## Dòng dữ liệu và kiểm tra
+```text
+HQT/
+├─ main.py                         # API FastAPI và các endpoint web
+├─ store.html                      # giao diện cửa hàng
+├─ admin.html                      # giao diện quản trị
+├─ static/                         # CSS, JavaScript, biểu tượng
+├─ data/                           # CSV và ảnh sản phẩm
+├─ sql/                            # toàn bộ script SQL theo thứ tự chạy
+├─ docker-compose.yml              # web, n8n và QA runner
+├─ docker/                         # Dockerfile của web và QA runner
+└─ admin.env                       # cấu hình kết nối SQL (không commit)
+```
 
-Web đọc sản phẩm qua `vw_ProductInventory`. Khi đặt hàng thành công, API gọi `usp_CreateOrder`: SQL ghi `Orders` và `OrderItems`, giảm `Products.StockQuantity` trong một giao dịch. Quản trị đọc `vw_AdminDashboard`, `vw_MonthlyRevenue`, `vw_OrderDetails`. Sau khi đặt hàng, chạy [12_order_sync_check.sql](sql/12_order_sync_check.sql) trong SSMS để kiểm chứng. CSV là dữ liệu mẫu ban đầu, không tự đổi khi khách mua hàng.
+## 3. Cấu hình kết nối SQL cho web
 
-Các file được web sử dụng trực tiếp: `02_schema_upgrade.sql` (view/procedure nền), `06_product_filters.sql` (lọc), `07_checkout.sql` (đặt hàng), `10_security_roles.sql` (quyền), và các view `vw_ProductInventory`, `vw_AdminDashboard`, `vw_MonthlyRevenue`, `vw_OrderDetails`. Các file báo cáo, kiểm thử quyền, Module 05/06 và `91_cleanup_legacy.sql` không được API tự gọi; chúng là script bài tập hoặc vận hành thủ công.
+Tạo hoặc kiểm tra file `admin.env` ở thư mục gốc. Các khóa mà `main.py` sử dụng là:
 
-## Phạm vi dữ liệu và tình trạng xác minh
+```env
+DB_SERVER=host.docker.internal,1433
+DB_NAME=PhoneStore
+DB_USER=phone_app
+DB_PASSWORD=<mật-khẩu-phone_app>
+APP_SECRET=<chuỗi-bí-mật-dài>
+ADMIN_INITIAL_PASSWORD=<mật-khẩu-admin>
+```
 
-Hai CSV có 500 dòng và 500 SKU khác nhau; 500 tệp ảnh đọc được, nhưng chỉ có 294 nội dung ảnh khác nhau. Có 200 tên `Phiên bản tham khảo` là biến thể dữ liệu mẫu dùng lại ảnh; không trình bày thành 500 sản phẩm độc lập đã cào. Giá vốn và tồn kho là dữ liệu mô phỏng.
+Nếu SQL Server đang nghe cổng khác, thay giá trị `DB_SERVER`. Khi web chạy trong Docker trên Windows, `host.docker.internal` trỏ về SQL Server trên máy host. Không dùng `localhost` trong biến `DB_SERVER` của container web.
 
-Đề PDF yêu cầu tối thiểu 6 bảng chính, ràng buộc dữ liệu, dữ liệu mẫu, 10 truy vấn nghiệp vụ, 3 procedure, 2 function, 3 view, hướng dẫn chạy, báo cáo và slide. Script nền có 11 bảng; script mở rộng có 4 view, 3 procedure, 2 function; truy vấn báo cáo có 11 câu. Ngày 01/11/2026, `/health` trả 200 với database `PhoneStore`; API có 500 sản phẩm đang bán khớp 500 SKU của CSV, không thiếu đường dẫn ảnh. SQL hiện có 3 đơn/3 dòng đơn; 3 đơn xuất hiện qua view và tổng tiền khớp dòng đơn. **Chưa chạy lại toàn bộ script trên một database thử nghiệm và chưa đặt đơn thử trong lần rà soát này.** Vẫn cần đối chiếu ERD, từ điển dữ liệu, báo cáo PDF và slide với mã thực tế.
+## 4. Chạy SQL theo đúng thứ tự
+
+### 4.1. Trường hợp đang có database và muốn giữ đơn hàng
+
+Đây là cách khuyến nghị cho hệ thống hiện tại.
+
+1. Mở SSMS, kết nối tới SQL Server bằng tài khoản quản trị.
+2. Mở `sql/master_run.sql`.
+3. Chọn **Query → SQLCMD Mode**.
+4. Đảm bảo dòng sau vẫn được comment:
+
+   ```sql
+   -- :r .\01_database_init.sql
+   ```
+
+5. Chạy toàn bộ file bằng **Execute**.
+
+`master_run.sql` sẽ chạy theo chuỗi (thứ tự này là bắt buộc vì procedure đặt hàng web dùng hàm `dbo.VOUCHER` được tạo ở Module 8):
+
+```text
+02_schema_upgrade.sql
+03_catalog_seed.sql
+04_catalog_expand.sql
+05_hide_base_samples.sql
+06_product_filters.sql
+08_business_logic.sql
+07_checkout.sql
+Module05_Transactions/10_transactions.sql
+Module06_ErrorHandling/12_error_handling.sql
+Module06_ErrorHandling/13_test_cases.sql
+11_security_roles.sql
+09_module3_queries_views.sql
+10_report_queries.sql
+12_security_tests.sql
+13_order_sync_check.sql
+16_indexes_performance.sql
+```
+
+Các script trên được thiết kế theo hướng bổ sung/nâng cấp và không tự xóa đơn hàng hiện có.
+
+### 4.2. Trường hợp tạo database thử nghiệm mới
+
+`01_database_init.sql` có thể tạo lại database `PhoneStore` và xóa dữ liệu cũ. Chỉ dùng trên máy/database thử nghiệm:
+
+1. Sao lưu database trước khi thực hiện.
+2. Mở `sql/master_run.sql` ở SQLCMD Mode.
+3. Bỏ comment dòng `-- :r .\01_database_init.sql` thành `:r .\01_database_init.sql`.
+4. Chạy file một lần.
+5. Sau khi kiểm tra xong, không chạy lại bước này trên database đang sử dụng thật.
+
+## 5. Các nhóm script
+
+| Nhóm | File | Chức năng |
+|---|---|---|
+| Khởi tạo/nâng cấp | `01_database_init.sql`, `02_schema_upgrade.sql` | Tạo database, bảng, khóa, cột mở rộng, view, function và procedure nền. |
+| Dữ liệu catalog | `03_catalog_seed.sql`, `04_catalog_expand.sql`, `05_hide_base_samples.sql` | Nạp danh mục, thương hiệu, sản phẩm và ngừng bán dữ liệu mẫu nền mà không xóa lịch sử. |
+| Lọc sản phẩm | `06_product_filters.sql` | Lọc theo danh mục, thương hiệu và từ khóa. |
+| Nghiệp vụ cửa hàng/khuyến mãi | `08_business_logic.sql` | Tạo `usp_CreateOrder`, `usp_ProcessStockReceipt`, `usp_CancelAndRestock`, hàm `VOUCHER`, `Timkiemsanpham`, `Tinhtong`. Hàm `VOUCHER` được procedure web sử dụng để tính giảm giá. |
+| Đặt hàng web | `07_checkout.sql` | Tạo `dbo.usp_CreateOrder_Web`; giữ giá gốc ở `OrderItems`, lưu số phải thanh toán sau giảm ở `Orders.TotalAmount`. |
+| Module 03 | `09_module3_queries_views.sql`, `10_report_queries.sql` | Truy vấn nghiệp vụ và view báo cáo. |
+| Phân quyền | `11_security_roles.sql`, `12_security_tests.sql` | Role/login/user, quyền tối thiểu và kiểm thử. |
+| Đối soát | `13_order_sync_check.sql` | Kiểm tra đơn web, dòng hàng và tồn kho. |
+| Tối ưu | `16_indexes_performance.sql` | Chỉ mục và kiểm tra hiệu năng. |
+| Module 05 | `Module05_Transactions/10_transactions.sql`, `11_concurrency_tests.sql` | Giao dịch, khóa và đồng thời. |
+| Module 06 | `Module06_ErrorHandling/12_error_handling.sql`, `13_test_cases.sql` | Xử lý lỗi, rollback và ca kiểm thử. |
+
+`90_demo_accounts.sql` chỉ tạo tài khoản mẫu và đang để comment trong master. Chạy riêng khi cần. `91_cleanup_legacy.sql` là script dọn SKU cũ; chỉ chạy sau khi duyệt danh sách.
+
+## 6. Kiểm thử riêng
+
+Sau master, chạy thủ công:
+
+- `Module05_Transactions/11_concurrency_tests.sql`: hai cửa sổ SSMS.
+- `Module05_Transactions/session_A.sql` và `session_B.sql`: hai session riêng.
+- `Module06_ErrorHandling/13_test_cases.sql`: lỗi dữ liệu và rollback.
+- `sql/12_security_tests.sql`: thao tác được phép/bị từ chối.
+
+Không đưa các session đồng thời vào chuỗi tự động vì chúng có thể giữ khóa hoặc thay đổi dữ liệu kiểm thử.
+
+## 7. Khởi động website
+
+Mở PowerShell tại thư mục HQT:
+
+```powershell
+cd C:\Users\DELL\Dropbox\PC\Downloads\HQT
+docker compose up -d --build web
+```
+
+Muốn chạy cả n8n và QA runner:
+
+```powershell
+docker compose up -d --build
+```
+
+Kiểm tra:
+
+```powershell
+docker compose ps
+docker compose logs -f web
+```
+
+Mở:
+
+- Cửa hàng: [http://localhost:8000/](http://localhost:8000/)
+- Quản trị: [http://localhost:8000/admin](http://localhost:8000/admin)
+- Sức khỏe: [http://localhost:8000/health](http://localhost:8000/health)
+- n8n: [http://localhost:5678/](http://localhost:5678/)
+
+Sau khi sửa mã, chạy lại `docker compose up -d --build web`.
+
+## 8. Luồng web → SQL
+
+1. Cửa hàng đọc sản phẩm từ `dbo.vw_ProductInventory`.
+2. Bộ lọc dùng `Categories`, `Brands`, `Products` và procedure trong `06_product_filters.sql`.
+3. Xác nhận đơn gọi `dbo.usp_CreateOrder_Web`.
+4. Procedure kiểm tra tồn, gọi `dbo.VOUCHER` (20 triệu giảm 2%, từ 50 triệu giảm 5%, tối đa 3 triệu), tạo `Orders`/`OrderItems` và giảm `Products.StockQuantity` trong transaction.
+5. Quản trị đọc `dbo.vw_AdminDashboard`, `dbo.vw_MonthlyRevenue`, `dbo.vw_OrderDetails`.
+6. CSV/ảnh là nguồn nạp catalog ban đầu; mua hàng cập nhật SQL, không cập nhật ngược CSV.
+
+## 9. Kiểm tra sau khi đặt hàng
+
+Trong SSMS, chọn database `PhoneStore`:
+
+```sql
+SELECT COUNT(*) AS ActiveProducts
+FROM dbo.Products
+WHERE IsActive = 1;
+
+SELECT TOP (20) *
+FROM dbo.vw_OrderDetails
+ORDER BY OrderDate DESC, OrderId DESC;
+
+SELECT OrderId, OrderDate, Status, TotalAmount
+FROM dbo.Orders
+WHERE Status = N'completed'
+ORDER BY OrderDate DESC, OrderId DESC;
+
+SELECT O.OrderId,
+       O.TotalAmount,
+       SUM(OI.LineTotal) AS DetailTotal
+FROM dbo.Orders AS O
+JOIN dbo.OrderItems AS OI ON OI.OrderId = O.OrderId
+GROUP BY O.OrderId, O.TotalAmount
+ORDER BY O.OrderId DESC;
+
+-- Đối chiếu giảm giá: tổng giá gốc, số phải trả và mức giảm
+SELECT O.OrderId,
+       SUM(OI.LineTotal) AS GrossTotal,
+       O.TotalAmount AS PayableTotal,
+       SUM(OI.LineTotal) - O.TotalAmount AS DiscountAmount
+FROM dbo.Orders AS O
+JOIN dbo.OrderItems AS OI ON OI.OrderId = O.OrderId
+GROUP BY O.OrderId, O.TotalAmount
+ORDER BY O.OrderId DESC;
+```
+
+Sau đó chạy `sql/13_order_sync_check.sql`. Nếu đặt hàng thành công nhưng không có `Orders`, xem log web và kiểm tra `DB_SERVER`, `DB_USER`, `DB_PASSWORD`.
+
+## 10. Tài khoản và phân quyền
+
+`sql/11_security_roles.sql` tạo/cấp quyền cho quản trị, nhân viên, người xem báo cáo và tài khoản ứng dụng `phone_app`. `sql/90_demo_accounts.sql` là dữ liệu demo tùy chọn. Không dùng mật khẩu demo cho môi trường thật và không đưa mật khẩu vào README/GitHub.
+
+## 11. Xử lý lỗi thường gặp
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| `localhost:8000` không mở | `docker compose ps`, rồi `docker compose logs web`. |
+| API lỗi SQL | Kiểm tra SQL Server, TCP/IP/cổng và `admin.env`; trong Docker dùng `host.docker.internal`. |
+| Thiếu view/procedure | Chạy lại `02_schema_upgrade.sql`, `06_product_filters.sql`, `07_checkout.sql`. |
+| Đặt hàng lỗi tồn kho | Kiểm tra `Products.StockQuantity` và chạy `13_order_sync_check.sql`. |
+| Giao diện chưa đổi | `docker compose up -d --build web`, rồi Ctrl+F5. |
+| `:r` không chạy | Bật **Query → SQLCMD Mode** trong SSMS. |
+
+## 12. Sao lưu
+
+Trước `01_database_init.sql` hoặc `91_cleanup_legacy.sql`, hãy backup database. Không chạy script hủy/tạo database trên database đang có đơn hàng cần giữ.
+
+## 13. Trạng thái
+
+- Endpoint `/health` và API catalog đã được kiểm tra ở local.
+- Catalog web lấy từ SQL; danh mục/thương hiệu/sản phẩm không phải dữ liệu hard-code riêng của giao diện.
+- Chuỗi script chính nằm trong `sql/master_run.sql`.
+- Module 05 concurrency vẫn cần chạy thủ công theo mục 6.
+- Không chạy `01_database_init.sql` trên database hiện tại trong hướng dẫn này để tránh mất dữ liệu.
+

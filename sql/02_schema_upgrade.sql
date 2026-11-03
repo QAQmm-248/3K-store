@@ -43,7 +43,7 @@ IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name='Suppliers' AND schema_id=SCH
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name='StockReceipts' AND schema_id=SCHEMA_ID('dbo'))
  CREATE TABLE dbo.StockReceipts(ReceiptId INT IDENTITY PRIMARY KEY,SupplierId INT NOT NULL,ReceivedByEmployeeId INT NULL,ReceivedAt DATETIME2(0) NOT NULL DEFAULT(SYSDATETIME()),Note NVARCHAR(500) NULL,CONSTRAINT FK_StockReceipts_Suppliers FOREIGN KEY(SupplierId) REFERENCES dbo.Suppliers(SupplierId),CONSTRAINT FK_StockReceipts_Employees FOREIGN KEY(ReceivedByEmployeeId) REFERENCES dbo.Employees(EmployeeId));
 IF NOT EXISTS (SELECT 1 FROM sys.tables WHERE name='StockReceiptItems' AND schema_id=SCHEMA_ID('dbo'))
- CREATE TABLE dbo.StockReceiptItems(ReceiptId INT NOT NULL,ProductId INT NOT NULL,Quantity INT NOT NULL,UnitCost DECIMAL(18,2) NOT NULL,CONSTRAINT PK_StockReceiptItems PRIMARY KEY(ReceiptId,ProductId),CONSTRAINT CK_StockReceiptItems_Qty CHECK(Quantity>0),CONSTRAINT FK_StockReceiptItems_Receipt FOREIGN KEY(ReceiptId) REFERENCES dbo.StockReceipts(ReceiptId),CONSTRAINT FK_StockReceiptItems_Product FOREIGN KEY(ProductId) REFERENCES dbo.Products(ProductId));
+ CREATE TABLE dbo.StockReceiptItems(ReceiptId INT NOT NULL,ProductId INT NOT NULL,Quantity INT NOT NULL,UnitCost DECIMAL(18,2) NOT NULL,CONSTRAINT PK_StockReceiptItems PRIMARY KEY(ReceiptId,ProductId),CONSTRAINT CK_StockReceiptItems_Qty CHECK(Quantity>0),CONSTRAINT FK_StockReceiptItems_Receipts FOREIGN KEY(ReceiptId) REFERENCES dbo.StockReceipts(ReceiptId),CONSTRAINT FK_StockReceiptItems_Products FOREIGN KEY(ProductId) REFERENCES dbo.Products(ProductId));
 GO
 /* Cap nhat du lieu cu sau khi SQL Server da nhan cac cot vua them. */
 UPDATE o SET CreatedBy=e.UserId FROM dbo.Orders o JOIN dbo.Employees e ON e.EmployeeId=o.CreatedByEmployeeId WHERE o.CreatedBy IS NULL;
@@ -57,7 +57,7 @@ IF EXISTS(SELECT 1 FROM sys.check_constraints WHERE name='CK_Users_RoleName') AL
 GO
 CREATE OR ALTER VIEW dbo.vw_ProductInventory AS
  SELECT p.ProductId,p.SKU,p.ProductName,b.BrandName,c.CategoryName,p.RAMGB,p.StorageGB,p.SalePrice,p.CostPrice,p.StockQuantity,p.ImagePath,
-        CAST(NULL AS NVARCHAR(500)) AS SourceURL,p.PriceCheckedAt,p.IsDemoData,p.IsActive,p.WarrantyMonths,p.Description,p.DataSource
+        p.SourceURL,p.PriceCheckedAt,p.IsDemoData,p.IsActive,p.WarrantyMonths,p.Description,p.DataSource
  FROM dbo.Products p JOIN dbo.Brands b ON b.BrandId=p.BrandId JOIN dbo.Categories c ON c.CategoryId=p.CategoryId;
 GO
 CREATE OR ALTER VIEW dbo.vw_OrderDetails AS
@@ -87,7 +87,7 @@ GO
 CREATE OR ALTER FUNCTION dbo.fn_ProductRevenue(@ProductId INT) RETURNS DECIMAL(18,2) AS
 BEGIN DECLARE @Total DECIMAL(18,2); SELECT @Total=COALESCE(SUM(oi.LineTotal),0) FROM dbo.OrderItems oi JOIN dbo.Orders o ON o.OrderId=oi.OrderId WHERE oi.ProductId=@ProductId AND o.Status='completed'; RETURN @Total; END;
 GO
-CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder
+CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder_Web
  @UserId INT,@FullName NVARCHAR(150),@Phone VARCHAR(20),@Email NVARCHAR(150)=NULL,@Address NVARCHAR(300)=NULL,@Items NVARCHAR(MAX)
 AS
 BEGIN
@@ -99,7 +99,7 @@ BEGIN
   SELECT @CustomerId=CustomerId FROM dbo.Customers WITH(UPDLOCK,HOLDLOCK) WHERE UserId=@UserId;
   IF @CustomerId IS NULL THROW 51001,N'Tài khoản chưa có hồ sơ khách hàng.',1;
   UPDATE dbo.Customers SET FullName=@FullName,Phone=@Phone,Email=@Email,Address=@Address WHERE CustomerId=@CustomerId;
-  DECLARE @Cart TABLE(ProductId INT PRIMARY KEY,Quantity INT NOT NULL,UnitPrice DECIMAL(18,2),UnitCost DECIMAL(18,2),ProductName NVARCHAR(200));
+  DECLARE @Cart TABLE(ProductId INT PRIMARY KEY,Quantity INT NOT NULL,UnitPrice DECIMAL(18,2),UnitCost DECIMAL(18,2),ProductName NVARCHAR(400));
   INSERT @Cart(ProductId,Quantity)
    SELECT TRY_CONVERT(INT,product_id),SUM(TRY_CONVERT(INT,quantity)) FROM OPENJSON(@Items)
    WITH(product_id NVARCHAR(30) '$.product_id',quantity NVARCHAR(30) '$.quantity')
@@ -127,3 +127,4 @@ BEGIN SET NOCOUNT ON; SET XACT_ABORT ON; IF @Quantity<=0 OR @UnitCost<0 THROW 51
  BEGIN TRAN; UPDATE dbo.Products WITH(UPDLOCK) SET StockQuantity=StockQuantity+@Quantity,CostPrice=@UnitCost WHERE ProductId=@ProductId;
  IF @@ROWCOUNT=0 BEGIN ROLLBACK; THROW 51021,N'Không tìm thấy sản phẩm.',1; END; COMMIT; END;
 GO
+

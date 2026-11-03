@@ -279,7 +279,7 @@ def checkout(data: Checkout, request: Request):
     cn = db()
     try:
         cur = cn.cursor()
-        cur.execute("EXEC dbo.usp_CreateOrder @UserId=?,@FullName=?,@Phone=?,@Email=?,@Address=?,@Items=?",
+        cur.execute("EXEC dbo.usp_CreateOrder_Web @UserId=?,@FullName=?,@Phone=?,@Email=?,@Address=?,@Items=?",
                     user["id"], data.full_name.strip(), data.phone.strip(), data.email,
                     data.address, json.dumps(normalized, ensure_ascii=False))
         result = cur.fetchone()
@@ -287,7 +287,8 @@ def checkout(data: Checkout, request: Request):
             cn.rollback()
             raise HTTPException(502, "SQL Server không trả về mã đơn hàng")
         cn.commit()
-        return {"ok": True, "order_id": int(result.OrderId), "total": float(result.TotalAmount)}
+        return {"ok": True, "order_id": int(result.OrderId), "total": float(result.TotalAmount),
+                "discount": float(getattr(result, "DiscountAmount", 0) or 0)}
     except HTTPException:
         cn.rollback(); raise
     except pyodbc.IntegrityError:

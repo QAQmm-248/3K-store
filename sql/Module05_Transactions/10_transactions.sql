@@ -1,24 +1,34 @@
+
 /*
-MODULE 05 - GIAO DICH
-Co so du lieu: PhoneStore
-Cac nghiep vu:
-  1. Ban hang: tao Orders, OrderItems, tru ton kho, hoan tat don.
-  2. Nhap kho: tao StockReceipts, StockReceiptItems, cong ton kho, cap nhat CostPrice.
+MODULE 05 - TRANSACTIONS
+Database: PhoneStore
+
+  - Su dung lai cac stored procedure da tao o Module 04.
+
+Cac stored procedure Module 04 duoc su dung:
+  1. dbo.usp_CreateOrder
+  2. dbo.usp_ProcessStockReceipt
+  3. dbo.usp_CancelAndRestock
+
+Cac wrapper Module 05:
+  1. dbo.usp_CreateOrder_Transaction
+  2. dbo.usp_ProcessStockReceipt_Transaction
+  3. dbo.usp_CancelAndRestock_Transaction
 
 Luu y:
-- Khong DROP DATABASE, khong xoa du lieu mau.
-- Chay file nay de tao/cap nhat 2 stored procedures.
-- Cac lenh kiem thu nam trong comment, chi chay khi muon kiem thu.
-- OrderItems.LineTotal la computed column nen KHONG INSERT truc tiep.
+  - Khong DROP DATABASE, khong xoa du lieu mau.
+  - Chay file nay de tao/cap nhat cac wrapper cua Module 05.
 */
 
 USE PhoneStore;
 GO
 
 /* =========================================================
-   1. GIAO DICH BAN HANG
+   1. TRANSACTION BAN HANG
+   Goi stored procedure usp_CreateOrder 
    ========================================================= */
-CREATE OR ALTER PROCEDURE dbo.usp_CreateOrderWithTransaction
+
+CREATE OR ALTER PROCEDURE dbo.usp_CreateOrder_Transaction
     @CustomerId INT,
     @EmployeeId INT,
     @ProductId INT,
@@ -28,82 +38,51 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    DECLARE @Stock INT;
-    DECLARE @SalePrice DECIMAL(18,2);
-    DECLARE @CostPrice DECIMAL(18,2);
-    DECLARE @OrderId INT;
-
     BEGIN TRY
         BEGIN TRANSACTION;
 
-        IF @Quantity IS NULL OR @Quantity <= 0
-            THROW 50001, N'So luong phai lon hon 0.', 1;
+        /*
+        Khoa dong san pham trong suot transaction.
+        Tranh hai phien cung ban mot san pham
+        va doc cung mot muc ton kho.
+        */
 
-        IF NOT EXISTS (
-            SELECT 1 FROM dbo.Customers
-            WHERE CustomerId = @CustomerId
-        )
-            THROW 50002, N'Khach hang khong ton tai.', 1;
+        DECLARE @Stock INT;
 
-        IF NOT EXISTS (
-            SELECT 1 FROM dbo.Employees
-            WHERE EmployeeId = @EmployeeId AND IsActive = 1
-        )
-            THROW 50003, N'Nhan vien khong ton tai hoac da ngung hoat dong.', 1;
-
-        SELECT
-            @Stock = StockQuantity,
-            @SalePrice = SalePrice,
-            @CostPrice = CostPrice
+        SELECT @Stock = StockQuantity
         FROM dbo.Products WITH (UPDLOCK, HOLDLOCK)
-        WHERE ProductId = @ProductId AND IsActive = 1;
-
-        IF @Stock IS NULL
-            THROW 50004, N'San pham khong ton tai hoac da ngung kinh doanh.', 1;
-
-        IF @Stock < @Quantity
-            THROW 50005, N'So luong ton kho khong du.', 1;
-
-        INSERT INTO dbo.Orders (CustomerId, CreatedByEmployeeId)
-        VALUES (@CustomerId, @EmployeeId);
-
-        SET @OrderId = CONVERT(INT, SCOPE_IDENTITY());
-
-        INSERT INTO dbo.OrderItems
-            (OrderId, ProductId, Quantity, UnitPrice, UnitCost)
-        VALUES
-            (@OrderId, @ProductId, @Quantity, @SalePrice, @CostPrice);
-
-        UPDATE dbo.Products
-        SET StockQuantity = StockQuantity - @Quantity
         WHERE ProductId = @ProductId;
 
-        UPDATE dbo.Orders
-        SET Status = 'completed',
-            CompletedAt = SYSDATETIME()
-        WHERE OrderId = @OrderId;
+        /*
+        Goi nghiep vu ban hang cua Module 04.
+        Module 04 tu kiem tra san pham, so luong,
+        khach hang, nhan vien va cap nhat ton kho.
+        */
+
+        EXEC dbo.usp_CreateOrder
+            @CustomerId = @CustomerId,
+            @EmployeeId = @EmployeeId,
+            @ProductId = @ProductId,
+            @Quantity = @Quantity;
 
         COMMIT TRANSACTION;
-
-        SELECT
-            @OrderId AS OrderId,
-            @ProductId AS ProductId,
-            @Quantity AS QuantitySold,
-            @Stock - @Quantity AS StockAfterSale,
-            N'Tao don hang thanh cong' AS ResultMessage;
     END TRY
     BEGIN CATCH
         IF XACT_STATE() <> 0
             ROLLBACK TRANSACTION;
+
         THROW;
     END CATCH;
 END;
 GO
 
+
 /* =========================================================
-   2. GIAO DICH NHAP KHO
+   2. TRANSACTION NHAP KHO
+   Goi stored procedure usp_ProcessStockReceipt 
    ========================================================= */
-CREATE OR ALTER PROCEDURE dbo.usp_ProcessStockReceipt
+
+CREATE OR ALTER PROCEDURE dbo.usp_ProcessStockReceipt_Transaction
     @SupplierId INT,
     @ReceivedByEmployeeId INT,
     @ProductId INT,
@@ -114,14 +93,13 @@ BEGIN
     SET NOCOUNT ON;
     SET XACT_ABORT ON;
 
-    IF @Quantity IS NULL OR @Quantity <= 0
-        THROW 52001, N'So luong nhap phai lon hon 0.', 1;
-
-    IF @UnitCost IS NULL OR @UnitCost < 0
-        THROW 52002, N'Gia von khong duoc am.', 1;
-
     BEGIN TRY
         BEGIN TRANSACTION;
+
+        /*
+        Khoa dong san pham de cac giao dich nhap kho
+        va ban hang tren cung san pham duoc tuan tu hoa.
+        */
 
         DECLARE @CurrentStock INT;
 
@@ -129,101 +107,227 @@ BEGIN
         FROM dbo.Products WITH (UPDLOCK, HOLDLOCK)
         WHERE ProductId = @ProductId;
 
-        IF @CurrentStock IS NULL
-            THROW 52003, N'Khong tim thay san pham can nhap kho.', 1;
+        /*
+        Goi nghiep vu nhap kho cua Module 04.
+        */
 
-        IF NOT EXISTS (SELECT 1 FROM dbo.Suppliers WHERE SupplierId = @SupplierId)
-            THROW 52004, N'Khong tim thay nha cung cap.', 1;
-
-        IF NOT EXISTS (SELECT 1 FROM dbo.Employees WHERE EmployeeId = @ReceivedByEmployeeId)
-            THROW 52005, N'Khong tim thay nhan vien nhap kho.', 1;
-
-        INSERT INTO dbo.StockReceipts
-            (SupplierId, ReceivedByEmployeeId, ReceivedAt)
-        VALUES
-            (@SupplierId, @ReceivedByEmployeeId, SYSDATETIME());
-
-        DECLARE @ReceiptId INT = CONVERT(INT, SCOPE_IDENTITY());
-
-        INSERT INTO dbo.StockReceiptItems
-            (ReceiptId, ProductId, Quantity, UnitCost)
-        VALUES
-            (@ReceiptId, @ProductId, @Quantity, @UnitCost);
-
-        UPDATE dbo.Products
-        SET StockQuantity = StockQuantity + @Quantity,
-            CostPrice = @UnitCost
-        WHERE ProductId = @ProductId;
+        EXEC dbo.usp_ProcessStockReceipt
+            @SupplierId = @SupplierId,
+            @ReceivedByEmployeeId = @ReceivedByEmployeeId,
+            @ProductId = @ProductId,
+            @Quantity = @Quantity,
+            @UnitCost = @UnitCost;
 
         COMMIT TRANSACTION;
-
-        SELECT
-            @ReceiptId AS ReceiptId,
-            @ProductId AS ProductId,
-            @Quantity AS QuantityReceived,
-            @CurrentStock + @Quantity AS StockAfterReceipt,
-            N'Nhap kho thanh cong' AS ResultMessage;
     END TRY
     BEGIN CATCH
         IF XACT_STATE() <> 0
             ROLLBACK TRANSACTION;
+
         THROW;
     END CATCH;
 END;
 GO
 
-/* =========================================================
-   3. KIEM THU BAN HANG - THANH CONG NHUNG ROLLBACK DE HOAN NGUYEN
-   Du lieu mau da xac nhan:
-   CustomerId=1, EmployeeId=1, ProductId=1, ton kho ban dau=100.
-   Chay rieng khoi nay neu can lap lai kiem thu.
-   ========================================================= */
--- BEGIN TRANSACTION;
--- EXEC dbo.usp_CreateOrderWithTransaction
---     @CustomerId = 1, @EmployeeId = 1, @ProductId = 1, @Quantity = 2;
--- SELECT ProductId, StockQuantity FROM dbo.Products WHERE ProductId = 1;
--- SELECT TOP (1) * FROM dbo.Orders ORDER BY OrderId DESC;
--- SELECT TOP (1) * FROM dbo.OrderItems ORDER BY OrderId DESC;
--- ROLLBACK TRANSACTION;
--- GO
 
 /* =========================================================
-   4. KIEM THU BAN HANG - THAT BAI DO KHONG DU TON KHO
-   Chay rieng khoi nay. Loi du kien 50005.
+   3. TRANSACTION HUY DON HANG VA HOAN KHO
+   Goi stored procedure usp_CancelAndRestock 
    ========================================================= */
+
+CREATE OR ALTER PROCEDURE dbo.usp_CancelAndRestock_Transaction
+    @OrderId INT
+AS
+BEGIN
+    SET NOCOUNT ON;
+    SET XACT_ABORT ON;
+
+    BEGIN TRY
+        BEGIN TRANSACTION;
+
+        /*
+        Khoa dong don hang de tranh hai phien
+        cung huy mot don va hoan kho hai lan.
+        */
+
+        DECLARE @Status VARCHAR(20);
+
+        SELECT @Status = Status
+        FROM dbo.Orders WITH (UPDLOCK, HOLDLOCK)
+        WHERE OrderId = @OrderId;
+
+        /*
+        Goi nghiep vu huy don va hoan kho cua Module 04.
+        */
+
+        EXEC dbo.usp_CancelAndRestock
+            @OrderId = @OrderId;
+
+        COMMIT TRANSACTION;
+    END TRY
+    BEGIN CATCH
+        IF XACT_STATE() <> 0
+            ROLLBACK TRANSACTION;
+
+        THROW;
+    END CATCH;
+END;
+GO
+
+
+/* =========================================================
+   4. KIEM THU BAN HANG - THANH CONG
+   Giao dich duoc ROLLBACK ben ngoai de hoan nguyen du lieu.
+   ========================================================= */
+
+--BEGIN TRANSACTION;
+
+--SELECT
+--    ProductId,
+--    StockQuantity AS StockBefore
+--FROM dbo.Products
+--WHERE ProductId = 1;
+
+
+--EXEC dbo.usp_CreateOrder_Transaction
+--    @CustomerId = 1,
+--    @EmployeeId = 1,
+--    @ProductId = 1,
+--    @Quantity = 2;
+
+--SELECT
+--    ProductId,
+--    StockQuantity AS StockAfter
+--FROM dbo.Products
+--WHERE ProductId = 1;
+
+--SELECT TOP (1) *
+--FROM dbo.Orders
+--ORDER BY OrderId DESC;
+
+--SELECT TOP (1) *
+--FROM dbo.OrderItems
+--ORDER BY OrderId DESC;
+
+--ROLLBACK TRANSACTION;
+--GO
+
+/* =========================================================
+   5. KIEM THU BAN HANG - THAT BAI
+   Du kien loi 51044 neu ton kho khong du.
+   ========================================================= */
+
 -- BEGIN TRY
---     EXEC dbo.usp_CreateOrderWithTransaction
---         @CustomerId = 1, @EmployeeId = 1, @ProductId = 1, @Quantity = 200;
+--     EXEC dbo.usp_CreateOrder_Transaction
+--         @CustomerId = 1,
+--         @EmployeeId = 1,
+--         @ProductId = 1,
+--         @Quantity = 999999;
 -- END TRY
 -- BEGIN CATCH
---     SELECT ERROR_NUMBER() AS ErrorNumber, ERROR_MESSAGE() AS ErrorMessage;
+--     SELECT
+--         ERROR_NUMBER() AS ErrorNumber,
+--         ERROR_MESSAGE() AS ErrorMessage;
 -- END CATCH;
 -- GO
 
+
 /* =========================================================
-   5. KIEM THU NHAP KHO - THANH CONG NHUNG ROLLBACK DE HOAN NGUYEN
-   Du lieu mau da xac nhan: SupplierId=1, EmployeeId=1, ProductId=1.
+   6. KIEM THU NHAP KHO - THANH CONG
+   Giao dich duoc ROLLBACK ben ngoai de hoan nguyen du lieu.
    ========================================================= */
+--BEGIN TRANSACTION;
+
+--SELECT
+--    ProductId,
+--    StockQuantity AS StockBefore
+--FROM dbo.Products
+--WHERE ProductId = 1;
+
+--EXEC dbo.usp_ProcessStockReceipt_Transaction
+--    @SupplierId = 1,
+--    @ReceivedByEmployeeId = 1,
+--    @ProductId = 1,
+--    @Quantity = 5,
+--    @UnitCost = 23800000;
+
+--SELECT
+--    ProductId,
+--    StockQuantity AS StockAfter,
+--    CostPrice
+--FROM dbo.Products
+--WHERE ProductId = 1;
+
+--SELECT TOP (1) *
+--FROM dbo.StockReceipts
+--ORDER BY ReceiptId DESC;
+
+--SELECT TOP (1) *
+--FROM dbo.StockReceiptItems
+--ORDER BY ReceiptId DESC;
+
+--ROLLBACK TRANSACTION;
+--GO
+
+/* =========================================================
+   7. KIEM THU NHAP KHO - THAT BAI
+   Du kien loi 52003 tu Module 04.
+   ========================================================= */
+
+-- BEGIN TRY
+--     EXEC dbo.usp_ProcessStockReceipt_Transaction
+--         @SupplierId = 1,
+--         @ReceivedByEmployeeId = 1,
+--         @ProductId = -999999,
+--         @Quantity = 5,
+--         @UnitCost = 23800000;
+-- END TRY
+-- BEGIN CATCH
+--     SELECT
+--         ERROR_NUMBER() AS ErrorNumber,
+--         ERROR_MESSAGE() AS ErrorMessage;
+-- END CATCH;
+-- GO
+
+
+/* =========================================================
+   8. KIEM THU HUY DON HANG - THANH CONG
+   Chi chay khi co OrderId hop le.
+   Nen chon don completed de kiem tra hoan kho.
+   ========================================================= */
+
 -- BEGIN TRANSACTION;
--- EXEC dbo.usp_ProcessStockReceipt
---     @SupplierId = 1, @ReceivedByEmployeeId = 1,
---     @ProductId = 1, @Quantity = 5, @UnitCost = 23800000;
--- SELECT ProductId, StockQuantity, CostPrice FROM dbo.Products WHERE ProductId = 1;
--- SELECT TOP (1) * FROM dbo.StockReceipts ORDER BY ReceiptId DESC;
--- SELECT TOP (1) * FROM dbo.StockReceiptItems ORDER BY ReceiptId DESC;
+
+-- EXEC dbo.usp_CancelAndRestock_Transaction
+--     @OrderId = 1;
+
+-- SELECT OrderId, Status
+-- FROM dbo.Orders
+-- WHERE OrderId = 1;
+
+-- SELECT p.ProductId, p.StockQuantity
+-- FROM dbo.Products p
+-- INNER JOIN dbo.OrderItems oi
+--     ON p.ProductId = oi.ProductId
+-- WHERE oi.OrderId = 1;
+
 -- ROLLBACK TRANSACTION;
 -- GO
 
-/* =========================================================
-   6. KIEM THU NHAP KHO - THAT BAI DO PRODUCT KHONG TON TAI
-   Loi du kien 52003. Procedure tu ROLLBACK trong CATCH.
-   ========================================================= */
+--/* =========================================================
+--   9. KIEM THU HUY DON HANG - THAT BAI
+--   Du kien loi 53001 neu don hang khong ton tai.
+--   ========================================================= */
+
 -- BEGIN TRY
---     EXEC dbo.usp_ProcessStockReceipt
---         @SupplierId = 1, @ReceivedByEmployeeId = 1,
---         @ProductId = -999999, @Quantity = 5, @UnitCost = 23800000;
+--     EXEC dbo.usp_CancelAndRestock_Transaction
+--         @OrderId = -999999;
 -- END TRY
 -- BEGIN CATCH
---     SELECT ERROR_NUMBER() AS ErrorNumber, ERROR_MESSAGE() AS ErrorMessage;
+--     SELECT
+--         ERROR_NUMBER() AS ErrorNumber,
+--         ERROR_MESSAGE() AS ErrorMessage;
 -- END CATCH;
 -- GO
+
+
