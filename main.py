@@ -3,8 +3,12 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Optional
 
-import pyodbc
-pyodbc.pooling = True
+try:
+    import pyodbc
+    pyodbc.pooling = True
+except Exception:
+    # Vercel không có ODBC Driver/SQL Server nội bộ; giao diện vẫn cần khởi động.
+    pyodbc = None
 from fastapi import FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -17,6 +21,8 @@ COOKIE = "hqt_session"
 
 
 def db():
+    if pyodbc is None:
+        raise RuntimeError("SQL Server chỉ khả dụng trong môi trường chạy nội bộ")
     server = os.getenv("DB_SERVER", "host.docker.internal,1433")
     name = os.getenv("DB_NAME", "PhoneStore")
     user = os.getenv("DB_USER", "phone_app")
