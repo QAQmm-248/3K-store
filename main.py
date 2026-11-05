@@ -124,6 +124,10 @@ def current_user(request: Request, admin=False):
 
 @app.on_event("startup")
 def bootstrap_admin():
+    # Vercel chỉ phục vụ giao diện; SQL Server vẫn chạy trong môi trường nội bộ.
+    # Không khởi tạo tài khoản qua kết nối SQL khi chạy serverless.
+    if os.getenv("VERCEL"):
+        return
     initial = os.getenv("ADMIN_INITIAL_PASSWORD", "")
     if not initial:
         return
